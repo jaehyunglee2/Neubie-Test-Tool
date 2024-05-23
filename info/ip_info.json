@@ -1,0 +1,16 @@
+{
+  "bastion": {
+      "host": "bastion.neubie.co.kr"
+  },
+  "target": {
+      "user": "linkxavier",
+      "password": "neubility"
+  },
+  "ips": {
+      "12": "10.7.0.24",
+      "16": "10.7.0.13",
+      "24": "10.7.0.14",
+      "50": "10.7.0.42",
+      "설명": "여기에 기체 ip만 계속 추가해주면 됨 (기체 원격접속 후 robot_sw_version 확인"
+  }
+}
