@@ -5,6 +5,20 @@ from autonomy_ros2_message.msg import LoggingMsg, ServiceTarget
 from PyQt5.QtCore import QObject, pyqtSignal
 from std_msgs.msg import Bool
 
+from rclpy.qos import QoSDurabilityPolicy
+from rclpy.qos import QoSHistoryPolicy
+from rclpy.qos import QoSProfile
+from rclpy.qos import QoSReliabilityPolicy
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+qos_depth = 10
+QOS_RKL10TL = QoSProfile(
+    reliability = QoSReliabilityPolicy.RELIABLE,
+    history = QoSHistoryPolicy.KEEP_LAST,
+    depth = qos_depth,
+    durability = QoSDurabilityPolicy.VOLATILE
+)
 
 class RosSubscriberWorker(QObject):
     nb_ego_status_logger_signal = pyqtSignal(dict, dict, dict, dict)
@@ -38,45 +52,67 @@ class RosSubscriberWorker(QObject):
         subscription_logging = node.create_subscription(
             LoggingMsg,
             '/nb_ego_status_logger',
-            self.nb_ego_status_logger_callback, 10)
+            self.nb_ego_status_logger_callback, QOS_RKL10TL)
 
         subscription_service_target = node.create_subscription(
             ServiceTarget,
             '/service_target',
-            self.service_target_callback, 10)
+            self.service_target_callback, QOS_RKL10TL)
 
         subscription_is_crossing = node.create_subscription(
             Bool,
             '/is_crossing',
-            self.is_crossing_callback, 10)
+            self.is_crossing_callback, QOS_RKL10TL)
+        
+        try:
+            while rclpy.ok():
+                rclpy.spin_once(node)
+        except KeyboardInterrupt:
+            print("Shutting down gracefully.")
+        except Exception as e:
+            print(f"Error occurred: {e}. Retrying in 2 seconds...")
+            time.sleep(2)
+        finally:
 
-        while rclpy.ok():
-            try:
-                rclpy.spin(node)
-            except KeyboardInterrupt:
-                print("Shutting down gracefully.")
-                break
-            except Exception as e:
-                print(f"Error occurred: {e}. Retrying in 2 seconds...")
-                time.sleep(2)
+            node.destroy_node()
+            rclpy.shutdown()
 
-        node.destroy_node()
-        rclpy.shutdown()
 
     def is_crossing_callback(self, msg):
         pass
 
     def nb_ego_status_logger_callback(self, msg):
         try:
-            parse_sys_info = self.parse_sys_info(msg)
-            parse_sensor_info = self.parse_sensor_info(msg) #기능안전데이터 통합 (sensor / autonomy data / 경로이탈 등등...)
-            parse_cross_info = self.parse_cross_info(msg)
-            parse_debug_info = self.parse_debug_info(msg)
-            self.nb_ego_status_logger_signal.emit(parse_sys_info, parse_sensor_info, parse_cross_info, parse_debug_info)
-            # print('No error')
-            
-        except IndexError as e:
-            print(f"IndexError occurred: {e}. Data might be incomplete. Waiting for next message.")
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                futures = {
+                    executor.submit(self.parse_sys_info, msg): 'parse_sys_info',
+                    executor.submit(self.parse_sensor_info, msg): 'parse_sensor_info',
+                    executor.submit(self.parse_cross_info, msg): 'parse_cross_info',
+                    executor.submit(self.parse_debug_info, msg): 'parse_debug_info',
+                }
+                
+                results = {}
+                
+                for future in as_completed(futures):
+                    task_name = futures[future]
+                    try:
+                        result = future.result()
+                        results[task_name] = result
+                    except IndexError as e:
+                        print(f"IndexError occurred in {task_name}: {e}. Data might be incomplete. Waiting for next message.")
+                    except Exception as e:
+                        print(f"An unexpected error occurred in {task_name}: {e}")
+
+            if len(results) == 4:
+                self.nb_ego_status_logger_signal.emit(
+                    results['parse_sys_info'],
+                    results['parse_sensor_info'],
+                    results['parse_cross_info'],
+                    results['parse_debug_info']
+                )
+            else:
+                print("Some parsing tasks did not complete successfully.")
+
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
 
@@ -86,6 +122,7 @@ class RosSubscriberWorker(QObject):
         if hasattr(msg.debug_data, 'data') and isinstance(msg.debug_data.data, list):
             for element in msg.debug_data.data:
                 key = element.key.data  # std_msgs.msg.String 객체의 data 속성 접근
+                if key == 'cross_state': continue
                 value = element.value
                 debug_info[key] = value  # debug_info 딕셔너리에 키와 값을 추가
 

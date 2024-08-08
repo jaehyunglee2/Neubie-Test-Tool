@@ -10,7 +10,8 @@ from syslog_monitor import SSHLogMonitor
 from PyQt5.QtGui import QBrush, QColor
 from topic_list import GetTopicList  # topic_list.py 파일의 GetTopicList 클래스 import
 
-
+import cProfile
+import pstats
 
 #pyuic5 main.ui -o mainwindow.py
 
@@ -21,7 +22,14 @@ class RosWorkerThread(QThread):
         self.worker = RosSubscriberWorker()
 
     def run(self):
+        profiler = cProfile.Profile()
+        profiler.enable()
         self.worker.run()
+
+        profiler.disable()
+        # 프로파일링 결과 출력
+        stats = pstats.Stats(profiler).sort_stats('cumtime')
+        stats.print_stats()
 
 class GuiApp(QMainWindow):
     def __init__(self):
