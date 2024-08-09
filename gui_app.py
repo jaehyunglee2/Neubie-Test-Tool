@@ -194,7 +194,7 @@ class GuiApp(QMainWindow):
                 # Set the key item in the first column
                 self.ui.tableWidget.setItem(row, 0, self.create_centered_item(key))
             except Exception as e:
-                print(f"Error setting key item for row {row}: {e}")
+                # print(f"Error setting key item for row {row}: {e}")
                 self.set_default_item(self.ui.tableWidget, row, 0, "Unknown")
 
             try:
@@ -209,7 +209,7 @@ class GuiApp(QMainWindow):
                 # Set the value item in the second column
                 self.ui.tableWidget.setItem(row, 1, self.create_centered_item(str(value)))
             except Exception as e:
-                print(f"Error processing or setting value for row {row}: {e}")
+                # print(f"Error processing or setting value for row {row}: {e}")
                 self.set_default_item(self.ui.tableWidget, row, 1, "Unknown")
 
             try:
@@ -217,7 +217,7 @@ class GuiApp(QMainWindow):
                 widget = self.create_radio_button(key, value)
                 self.ui.tableWidget.setCellWidget(row, 2, widget)
             except Exception as e:
-                print(f"Error creating radio button for row {row} with key '{key}' and value '{value}': {e}")
+                # print(f"Error creating radio button for row {row} with key '{key}' and value '{value}': {e}")
                 widget = self.create_radio_button_cross("gray")
                 self.ui.tableWidget.setCellWidget(row, 2, widget)
 
@@ -228,7 +228,7 @@ class GuiApp(QMainWindow):
                 explanation_item = self.create_centered_item(explanation, color)
                 self.ui.tableWidget.setItem(row, 3, explanation_item)
             except Exception as e:
-                print(f"Error processing explanation or color for row {row} with key '{key}' and value '{value}': {e}")
+                # print(f"Error processing explanation or color for row {row} with key '{key}' and value '{value}': {e}")
                 self.set_default_item(self.ui.tableWidget, row, 3, "Unknown")
                 
 
@@ -373,7 +373,7 @@ class GuiApp(QMainWindow):
                 # Set the value item in the second column
                 self.ui.tableWidget_2.setItem(row, 1, self.create_centered_item(str(value)))
             except Exception as e:
-                print(f"Error processing or setting value for row {row}: {e}")
+                # print(f"Error processing or setting value for row {row}: {e}")
                 self.set_default_item(self.ui.tableWidget_2, row, 1, "Unknown")
 
             try:
@@ -381,7 +381,7 @@ class GuiApp(QMainWindow):
                 widget = self.create_radio_button(key, value)
                 self.ui.tableWidget_2.setCellWidget(row, 2, widget)
             except Exception as e:
-                print(f"Error creating radio button for row {row} with key '{key}' and value '{value}': {e}")
+                # print(f"Error creating radio button for row {row} with key '{key}' and value '{value}': {e}")
                 widget = self.create_radio_button_cross("gray")
                 self.ui.tableWidget_2.setCellWidget(row, 2, widget)
 
@@ -392,7 +392,7 @@ class GuiApp(QMainWindow):
                 explanation_item = self.create_centered_item(explanation, color)
                 self.ui.tableWidget_2.setItem(row, 3, explanation_item)
             except Exception as e:
-                print(f"Error processing explanation or color for row {row} with key '{key}' and value '{value}': {e}")
+                # print(f"Error processing explanation or color for row {row} with key '{key}' and value '{value}': {e}")
                 self.set_default_item(self.ui.tableWidget_2, row, 3, "Unknown")
 
 
@@ -405,7 +405,7 @@ class GuiApp(QMainWindow):
                 # Set the key item in the first column
                 self.ui.tableWidget_3.setItem(row, 0, self.create_centered_item(key))
             except Exception as e:
-                print(f"Error setting key item for row {row}: {e}")
+                # print(f"Error setting key item for row {row}: {e}")
                 self.set_default_item(self.ui.tableWidget_3, row, 0, "Unknown")
 
             try:
@@ -428,7 +428,7 @@ class GuiApp(QMainWindow):
                 # Set the value item in the second column
                 self.ui.tableWidget_3.setItem(row, 1, self.create_centered_item(str(value)))
             except Exception as e:
-                print(f"Error processing or setting value for row {row}: {e}")
+                # print(f"Error processing or setting value for row {row}: {e}")
                 self.set_default_item(self.ui.tableWidget_3, row, 1, "Unknown")
 
             try:
@@ -436,7 +436,7 @@ class GuiApp(QMainWindow):
                 widget = self.create_radio_button_cross(color)
                 self.ui.tableWidget_3.setCellWidget(row, 2, widget)
             except Exception as e:
-                print(f"Error creating radio button for row {row} with key '{key}' and value '{value}': {e}")
+                # print(f"Error creating radio button for row {row} with key '{key}' and value '{value}': {e}")
                 widget = self.create_radio_button_cross("gray")
                 self.ui.tableWidget_3.setCellWidget(row, 2, widget)
 
@@ -447,7 +447,7 @@ class GuiApp(QMainWindow):
                 explanation_item = self.create_centered_item(explanation, color)
                 self.ui.tableWidget_3.setItem(row, 3, explanation_item)
             except Exception as e:
-                print(f"Error processing explanation or color for row {row} with key '{key}' and value '{value}': {e}")
+                # print(f"Error processing explanation or color for row {row} with key '{key}' and value '{value}': {e}")
                 self.set_default_item(self.ui.tableWidget_3, row, 3, "Unknown")
 
     def update_debug_text_edit(self, data):
@@ -455,14 +455,15 @@ class GuiApp(QMainWindow):
         try:
             self.ui.textEdit.clear()
         except Exception as e:
-            print(f"Error clearing text edit: {e}")
-        
+            # print(f"Error clearing text edit: {e}")
+            pass
         # Add data items from latest to oldest
         try:
             for key, value in reversed(data.items()):
                 self.ui.textEdit.insertPlainText(f'{key}: {value}\n')
         except Exception as e:
-            print(f"Error updating text edit with data: {e}")
+            # print(f"Error updating text edit with data: {e}")
+            pass
 
 
     # create_radio_button 함수 수정
@@ -494,7 +495,7 @@ class GuiApp(QMainWindow):
             return widget
 
         except Exception as e:
-            print(f"Error creating radio button with color {color}: {e}")
+            # print(f"Error creating radio button with color {color}: {e}")
             
             # Handle the exception by creating a default widget with a neutral color
             default_color = "gray"
@@ -635,7 +636,7 @@ class GuiApp(QMainWindow):
             return widget
 
         except Exception as e:
-            print(f"there is no data in {key}. Skipping now... Exception: {e}")
+            #  print(f"there is no data in {key}. Skipping now... Exception: {e}")
             radio_button = QRadioButton()
             color = "gray"
             # Create a widget and set a layout to center the radio button in the except block
