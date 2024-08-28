@@ -1,95 +1,54 @@
-import sys
-import json
+
 import os
-import paramiko
 from PyQt5.QtWidgets import QApplication, QComboBox, QPushButton, QVBoxLayout, QWidget, QLabel, QTextEdit, QListWidget, QHBoxLayout, QLineEdit
-from PyQt5.QtCore import QThread, pyqtSignal
 
-class SSHWorker(QThread):
-    update_signal = pyqtSignal(str)
-    result_signal = pyqtSignal(str)
+from resources.arguments import arguments
+from src.parameter_setting.sshworker import SSHWorker
 
-    def __init__(self, ip_info, selected_ip, bastion_host, user_name, user_password, param_action, param_name, param_value=None):
-        super().__init__()
-        self.ip_info = ip_info
-        self.selected_ip = selected_ip
-        self.bastion_host = bastion_host
-        self.user_name = user_name
-        self.user_password = user_password
-        self.param_action = param_action
-        self.param_name = param_name
-        self.param_value = param_value
-
-    def run(self):
-        client = None
-        target_client = None
-        try:
-            client = paramiko.SSHClient()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-            self.update_signal.emit("Connecting to bastion host...")
-            client.connect(hostname=self.bastion_host, username=self.user_name, password=self.user_password)
-            self.update_signal.emit("Connected to bastion host.")
-
-            self.update_signal.emit(f"Establishing SSH connection to target host {self.selected_ip}...")
-            transport = client.get_transport()
-            dest_addr = (self.selected_ip, 22)
-            local_addr = ('localhost', 0)
-            sock = transport.open_channel("direct-tcpip", dest_addr, local_addr)
-
-            target_client = paramiko.SSHClient()
-            target_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            target_client.connect(self.selected_ip, username=self.ip_info['target']['user'], password=self.ip_info['target']['password'], sock=sock)
-            self.update_signal.emit("SSH connection established to target host.")
-
-            # 프롬프트 표시
-            shell = target_client.invoke_shell()
-            self.update_signal.emit("Shell invoked. Waiting for prompt...")
-
-            # 프롬프트를 읽어와서 표시
-            prompt = shell.recv(1024).decode('utf-8')
-            self.result_signal.emit(prompt)
-
-            # ROS 2 명령 실행
-            if self.param_action == "SET":
-                #ros2 param set /NBPlatform 에 대한 세팅 (/NBPlatform에 대한 명령어)
-                command = f". /opt/ros/galactic/setup.bash && ros2 param set /NBPlatform {self.param_name} \"{self.param_value}\""
-            elif self.param_action == "GET":
-                command = f". /opt/ros/galactic/setup.bash && ros2 param get /NBPlatform {self.param_name}"
-
-            self.update_signal.emit(f"Executing: {command}")
-            stdin, stdout, stderr = target_client.exec_command(command)
-            result = stdout.read().decode() + stderr.read().decode()
-            self.result_signal.emit(result)
-
-        except Exception as e:
-            self.update_signal.emit(f"Error: {e}")
-        finally:
-            if target_client:
-                target_client.close()
-            if client:
-                client.close()
-            self.update_signal.emit("SSH connection closed.")
 
 class ROSParameterGUI(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("ROS2 Parameter GUI")
         self.resize(600, 1000)
+
+        self.ssh_worker = None
+        self.ssh_target_robot = None
+
         self.init_ui()
+        self.select_robot_num = self.ip_combobox.currentText()
 
     def init_ui(self):
         layout = QVBoxLayout()
 
-        current_directory = os.path.dirname(__file__)
-        file_path = os.path.join(current_directory, 'info', 'ip_info.json')
-        with open(file_path) as f:
-            self.ip_info = json.load(f)
+        robot_inform = arguments["robot_inform"]
+        self.robot_ip_info = { key : robot_inform.get(key)["ip"] for key in robot_inform }
+        
+        robot_selection_layout = QHBoxLayout()
 
+        ip_selection_layout = QVBoxLayout()
+        self.select_robot_label = QLabel('Select Robot:')
         self.ip_combobox = QComboBox()
-        self.ip_combobox.addItems(self.ip_info['ips'].keys())
-        layout.addWidget(QLabel('Select Robot:'))
-        layout.addWidget(self.ip_combobox)
+        self.ip_combobox.addItems(self.robot_ip_info.keys())
+        ip_selection_layout.addWidget(self.select_robot_label)
+        ip_selection_layout.addWidget(self.ip_combobox)
+
+        robot_selection_layout.addLayout(ip_selection_layout)
+
+        version_layout = QVBoxLayout()
+        self.version_button = QPushButton("Check Neubie Version")
+        self.version_button.setEnabled(False)
+        self.version_button.clicked.connect(self.check_version)
+        self.version_label = QLabel("Staus : Idle")
+        version_layout.addWidget(self.version_button)
+        version_layout.addWidget(self.version_label)
+
+        robot_selection_layout.addLayout(version_layout)
+
+        layout.addLayout(robot_selection_layout)
+        self.start_ssh_button = QPushButton("Start SSH Worker")
+        self.start_ssh_button.clicked.connect(self.init_sshworker)
+        layout.addWidget(self.start_ssh_button)
 
         self.param_action_combobox = QComboBox()
         self.param_action_combobox.addItems(["SET", "GET"])
@@ -110,7 +69,10 @@ class ROSParameterGUI(QWidget):
             "rviz_publisher_params.pub_enable#주행가능영역확인토픽",
             "max_velocity_mps#Permitted Longitudinal Max Speed",
             "velocity_profile_target_speed#경로 기울기에 따른 속도 프로파일 변수",
-            "velocity_profile_target_gradient#경로 기울기에 따른 속도 프로파일 변수"
+            "velocity_profile_target_gradient#경로 기울기에 따른 속도 프로파일 변수",
+            "behavior_planner_params.perception_crosswalk_resume_flag_enabled#횡단보도자동횡단"
+            
+
             # Add more parameters as needed
         ])
         layout.addWidget(QLabel('Select Parameter:'))
@@ -137,7 +99,8 @@ class ROSParameterGUI(QWidget):
         layout.addWidget(self.param_value_input)
 
         self.connect_button = QPushButton("Execute")
-        self.connect_button.clicked.connect(self.connect_to_ip)
+        self.connect_button.setEnabled(False)
+        self.connect_button.clicked.connect(self.execute_connection)
         layout.addWidget(self.connect_button)
 
         self.status_display = QTextEdit()
@@ -148,12 +111,41 @@ class ROSParameterGUI(QWidget):
 
         self.param_action_combobox.currentIndexChanged.connect(self.toggle_value_input)
         self.param_name_combobox.currentIndexChanged.connect(self.update_item_list)
+        self.ip_combobox.currentIndexChanged.connect(self.update_robot_num)
         self.add_item_button.clicked.connect(self.add_item)
         self.remove_item_button.clicked.connect(self.remove_item)
 
         # 초기 설정
         self.update_item_list()
         self.toggle_value_input()
+
+    def init_sshworker(self):
+        
+        if self.ssh_target_robot == self.select_robot_num:
+            self.status_display.append("이미 동일한 로봇의 ssh가 실행 중 입니다.")
+            print("이미 동일한 로봇의 ssh가 실행 중 입니다.")
+            return
+        
+        self.on_ssh_disconnected()
+
+        robot_num = self.select_robot_num
+        if not self.ssh_worker:
+            robot_ip = arguments["robot_inform"][robot_num]['ip']
+            self.ssh_worker = SSHWorker(arguments['target'], robot_ip, arguments['bastion']['host'], os.environ.get('MY_USERNAME'), os.environ.get('MY_PW'))
+            self.ssh_target_robot = robot_num
+        else:
+            print("새로운 기체의 ssh로 연결 합니다")
+            self.ssh_worker.close_ssh_connection()
+            robot_ip = arguments["robot_inform"][robot_num]['ip']
+            self.ssh_worker = SSHWorker(arguments['target'], robot_ip, arguments['bastion']['host'], os.environ.get('MY_USERNAME'), os.environ.get('MY_PW'))
+            self.ssh_target_robot = robot_num
+
+        self.ssh_worker.finished_signal.connect(self.on_ssh_finished)
+        self.ssh_worker.result_signal.connect(self.show_result)
+        self.ssh_worker.version_signal.connect(self.get_version_signal)
+        self.ssh_worker.update_signal.connect(self.update_status_display)
+
+        self.ssh_worker.start()
 
     def toggle_value_input(self):
         selected_param = self.param_name_combobox.currentText()
@@ -188,13 +180,14 @@ class ROSParameterGUI(QWidget):
         elif selected_param == "yield_behavior.campus.enabled" or \
             selected_param == "yield_behavior.camping.enabled" or \
             selected_param == "yield_behavior.golf.enabled" or \
+            selected_param == "behavior_planner_params.perception_crosswalk_resume_flag_enabled#횡단보도자동횡단" or \
             selected_param == "rviz_publisher_params.pub_enable#주행가능영역확인토픽": #https://neubility.atlassian.net/browse/ATNM-3356, https://neubilityhq.slack.com/archives/C036UFV0SDD/p1719470933937389?thread_ts=1719382311.344959&cid=C036UFV0SDD
             items = ["true", "false"]
         elif selected_param == "yield_behavior.campus.class_list" or \
             selected_param == "yield_behavior.camping.class_list":
-            items = ["car", "bus", "truck"]
+            items = ["car", "bus", "truck", "person"]
         elif selected_param == "yield_behavior.golf.class_list":
-            items = ["car", "bus", "truck", "cart"]
+            items = ["car", "bus", "truck", "cart", "person"]
         elif selected_param == "data_9#노면기반경로보정[-1.0(기본값)|1.0(기준경로)|2.0(전역경로)]":
             items = ["-1.0", "1.0", "2.0"] #https://neubility.atlassian.net/wiki/spaces/AUT/pages/502071446/-+Planning+Control
         elif selected_param == "max_velocity_mps#Permitted Longitudinal Max Speed" or \
@@ -207,6 +200,10 @@ class ROSParameterGUI(QWidget):
         self.item_selection_combobox.addItems(items)
         self.items_list.addItems(items)
 
+    def update_robot_num(self):
+        self.select_robot_num = self.ip_combobox.currentText()
+
+
     def add_item(self):
         current_item = self.item_selection_combobox.currentText()
         if current_item:
@@ -216,12 +213,7 @@ class ROSParameterGUI(QWidget):
         for item in self.items_list.selectedItems():
             self.items_list.takeItem(self.items_list.row(item))
 
-    def connect_to_ip(self):
-        selected_ip_number = self.ip_combobox.currentText()
-        selected_ip = self.ip_info['ips'][selected_ip_number]
-        bastion_host = self.ip_info['bastion']['host']
-        user_name = os.environ.get('MY_USERNAME')
-        user_password = os.environ.get('MY_PW')
+    def execute_connection(self):
         param_action = self.param_action_combobox.currentText()
         param_name = self.param_name_combobox.currentText()
 
@@ -236,7 +228,8 @@ class ROSParameterGUI(QWidget):
                 "yield_behavior.campus.enabled",
                 "yield_behavior.camping.enabled",
                 "yield_behavior.golf.enabled",
-                "rviz_publisher_params.pub_enable#주행가능영역확인토픽"
+                "rviz_publisher_params.pub_enable#주행가능영역확인토픽",
+                "behavior_planner_params.perception_crosswalk_resume_flag_enabled#횡단보도자동횡단"
             ]:
                 param_value = selected_items[0] if selected_items else "false"
             elif param_name == "data_9#노면기반경로보정[-1.0(기본값)|1.0(기준경로)|2.0(전역경로)]":
@@ -255,18 +248,46 @@ class ROSParameterGUI(QWidget):
         if param_value:
             param_value = param_value.split('#')[0].strip()
 
-        self.worker = SSHWorker(self.ip_info, selected_ip, bastion_host, user_name, user_password, param_action, param_name, param_value)
-        self.worker.update_signal.connect(self.update_status_display)
-        self.worker.result_signal.connect(self.show_result)
-        self.worker.start()
+        if param_action == "SET":
+            self.ssh_worker.set_param("/NBPlatform", param_name, param_value)
+        elif param_action == "GET":
+            self.ssh_worker.get_param("/NBPlatform", param_name)
+
 
     def update_status_display(self, message):
+        if "Secsh channel 0 open FAILED: Connection timed out: Connect failed" in message:
+            self.ssh_target_robot = None
         self.status_display.append(message)
 
     def show_result(self, result):
         self.status_display.append(f"Result:\n{result}")
 
+    def on_ssh_disconnected(self):
+        self.start_ssh_button.setEnabled(False)
+        self.version_button.setEnabled(False)
+        self.connect_button.setEnabled(False)
+
+    def on_ssh_finished(self):
+        self.start_ssh_button.setEnabled(True)
+        self.version_button.setEnabled(True)
+        self.connect_button.setEnabled(True)
+        
+    def check_version(self):
+        self.ssh_worker.get_version()
+
+    def get_version_signal(self, message):
+        self.version_label.setText(message)
+
+    def closeEvent(self, event):
+        # 창이 닫힐 때 호출되는 메서드
+        if self.ssh_worker is not None:
+            self.ssh_worker.close_ssh_connection()
+            self.ssh_worker = None
+
+        event.accept()
+
 if __name__ == "__main__":
+    import sys
     app = QApplication(sys.argv)
     window = ROSParameterGUI()
     window.show()

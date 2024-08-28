@@ -1,1 +1,11 @@
+venv
 __pycache__
+build
+dist
+icons
+image
+no_more
+ntt_bak
+test.py
+test
+neubie_test_tool.egg-info
